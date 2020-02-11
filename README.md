@@ -1,0 +1,1 @@
+# tool-maven-plugin-collisioncheck
