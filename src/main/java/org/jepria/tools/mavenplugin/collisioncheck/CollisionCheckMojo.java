@@ -18,22 +18,20 @@ package org.jepria.tools.mavenplugin.collisioncheck;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.codehaus.plexus.configuration.xml.XmlPlexusConfiguration;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Goal which checks collisions.
@@ -51,191 +49,182 @@ public class CollisionCheckMojo
   private XmlPlexusConfiguration configuration;
 
   /**
-   * Mojo input parameter, semicolon-separated classpath roots (relative to the maven project root).
+   * Mojo input parameter.
+   * Application-gwt.war path (relative to the maven project root).
    */
-  @Parameter( property = "classPathRoots", required = true )
-  private String classPathRoots;
+  @Parameter( property = "warGwtPath")
+  private String warGwtPath;
   
   /**
-   * Mojo input parameter, semicolon-separated classpath references (names or any IDs) matching {@link #classPathRoots}.
+   * Mojo input parameter.
+   * Application-service-rest.war path (relative to the maven project root)
    */
-  @Parameter( property = "classPathRefs", required = true )
-  private String classPathRefs;
-  
-  /**`
-   * Mojo input parameter, semicolon-separated filepath roots (relative to the maven project root).
-   */
-  @Parameter( property = "filePathRoots" )
-  private String filePathRoots;
+  @Parameter( property = "warServiceRestPath")
+  private String warServiceRestPath;
 
   /**
-   * Mojo input parameter, semicolon-separated filepath references (names or any IDs) matching {@link #filePathRoots}.
+   * Mojo input parameter.
+   * If collisions found, whether to fail execution.
+   * values: "1", "0", "true", "false", "TRUE", "FALSE"
    */
-  @Parameter( property = "filePathRefs" )
-  private String filePathRefs;
-  
-  /**
-   * Mojo input parameter, flag that sets the search for class collision only.
-   */
-  @Parameter( defaultValue = "true", property = "onlyClassCollision", required = true )
-  private boolean onlyClassCollision;
+  @Parameter( property = "strict")
+  private String strict = "true";
 
-  protected Set<Path> walkClassPathRoot(Path classPathRoot) throws MojoExecutionException {
-    try {
-      return Files.walk(classPathRoot)
-              .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".class"))
-              .map(path -> path.subpath(2, path.getNameCount())) // crop the path root (0-th element) and one subfolder (1-th element)
-              .collect(Collectors.toSet());
-    } catch (IOException e) {
-      throw new MojoExecutionException("Exception traversing class path root [" + classPathRoot + "]", e);
-    }
-  }
+  @Override
+  public void execute() throws MojoExecutionException, MojoFailureException {
 
-  protected Set<Path> walkFilePathRoot(Path filePathRoot) throws MojoExecutionException {
-    try {
-      return Files.walk(filePathRoot)
-              .filter(path -> Files.isRegularFile(path))
-              .map(path -> path.subpath(2, path.getNameCount())) // crop the path root (0-th element) and one subfolder (1-th element)
-              .collect(Collectors.toSet());
-    } catch (IOException e) {
-      throw new MojoExecutionException("Exception traversing file path root [" + filePathRoot + "]", e);
-    }
-  }
-  
-  protected String pathToClassname(Path path) {
-    String classname = path.toString();
-    classname = classname.substring(0, classname.lastIndexOf('.'));
-    classname = classname.replaceAll(Pattern.quote(File.separator), ".");
-    return classname;
-  }
-  
-  public void execute() throws MojoExecutionException {
+    if (warGwtPath == null || warServiceRestPath == null) {
+      getLog().error("Class collision check skipped: either \"warGwt\" or \"warServiceRest\" configuration parameter is empty.");
 
-    if (classPathRoots == null) {
-      throw new MojoExecutionException("classPathRoots attribute is mandatory");
-    }
+    } else {
 
-    List<String> classPathRootsSplit = Arrays.asList(classPathRoots.split("\\s*;\\s*"));
-    List<String> classPathRefsSplit = Arrays.asList(classPathRefs.split("\\s*;\\s*"));
-    
-    final Map<Path, Set<Integer>> classpaths = new HashMap<>();
-    
-    if (classPathRootsSplit.size() > 1) {
-      for (int index = 0; index < classPathRootsSplit.size(); index++) {
-        String classPathRoot = classPathRootsSplit.get(index);
-
-        final Path classPathRootPath = Paths.get(classPathRoot); // maven works with paths relative to the maven project root as if they are absolute paths
-
-        if (!Files.isDirectory(classPathRootPath)) {
-          throw new MojoExecutionException("classPathRoot must be a directory: " + classPathRoot);
+      Path warGwtPath0;
+      try {
+        warGwtPath0 = Paths.get(warGwtPath); // maven works with paths relative to the maven project root as if they are absolute paths
+        if (!Files.isRegularFile(warGwtPath0)) {
+          throw new MojoFailureException("The \"warGwt\" configuration parameter does not represent a regular file: [" + warGwtPath + "]");
         }
+      } catch (Throwable e) {
+        getLog().error(e);
+        throw new MojoFailureException("The \"warGwt\" configuration parameter does not represent a valid path: [" + warGwtPath + "]");
+      }
 
-        // classes from a single classpath
-        Set<Path> classpath = walkClassPathRoot(classPathRootPath);
+      Path warServiceRestPath0;
+      try {
+        warServiceRestPath0 = Paths.get(warServiceRestPath); // maven works with paths relative to the maven project root as if they are absolute paths
+        if (!Files.isRegularFile(warServiceRestPath0)) {
+          throw new MojoFailureException("The \"warServiceRest\" configuration parameter does not represent a regular file: [" + warServiceRestPath + "]");
+        }
+      } catch (Throwable e) {
+        getLog().error(e);
+        throw new MojoFailureException("The \"warServiceRest\" configuration parameter does not represent a valid path: [" + warServiceRestPath + "]");
+      }
 
-        for (Path clazz: classpath) {
-          Set<Integer> s = classpaths.get(clazz);
-          if (s == null) {
-            s = new HashSet<>();
-            classpaths.put(clazz, s);
-          }
-          s.add(index);
+      final War warGwt;
+      try {
+        warGwt = new WarImpl(warGwtPath0.toFile());
+      } catch (IOException e) {
+        // impossible
+        throw new RuntimeException(e);
+      }
+      final War warServiceRest;
+      try {
+        warServiceRest = new WarImpl(warServiceRestPath0.toFile());
+      } catch (IOException e) {
+        // impossible
+        throw new RuntimeException(e);
+      }
+
+      getLog().info("Collision check began.");
+      getLog().info("War files: [" + warGwtPath + "], [" + warServiceRestPath + "]");
+
+      CollisionAnalyzer.CollisionAnalyzeResult result = CollisionAnalyzer.analyzeCollisions(warGwt, warServiceRest);
+
+      // log collisions
+      boolean hasCollisions = false;
+
+      if (result.identicalJarTuples != null && result.identicalJarTuples.size() > 0) {
+        // identical jars is not an error case
+        getLog().warn("Identical jars:");
+        for (CollisionAnalyzer.LibJarTuple identicalJarTuple : result.identicalJarTuples) {
+          getLog().warn("    " + identicalJarTuple.jar1.jarName());
         }
       }
 
-      boolean hasCollisions = false;
+      if (result.identicalClassesInJarTuples != null && result.identicalClassesInJarTuples.size() > 0) {
+        // identical classes in jars is not an error case
+        getLog().warn("Identical classes in jars:");
+        for (CollisionAnalyzer.LibJarTuple libJarTuple : result.identicalClassesInJarTuples.keySet()) {
+          Collection<CollisionAnalyzer.ClassCollision> element = result.identicalClassesInJarTuples.get(libJarTuple);
+          getLog().warn("    [" + libJarTuple.jar1.jarName() + "], [" + libJarTuple.jar2.jarName() + "] " +
+                  "having " + element.size() + " class collisions:");
+          // list class collisions in case of non-same artifacts
+          for (CollisionAnalyzer.ClassCollision collision : element) {
+            getLog().warn("        " + collision.class1.classFile.canonicalClassName());
+          }
+        }
+      }
 
-      // log class collisions
-      Iterator<Map.Entry<Path, Set<Integer>>> eit = classpaths.entrySet().iterator();
-      while (eit.hasNext()) {
-        Map.Entry<Path, Set<Integer>> e = eit.next();
-        if (e.getValue().size() > 1) {
+      if (result.collisionsInJarTuples != null && result.collisionsInJarTuples.size() > 0) {
 
-          hasCollisions = true;
+        hasCollisions = true;
 
-          StringBuilder sb = new StringBuilder();
 
-          sb.append("The classpaths");
-          for (Integer i : e.getValue()) {
-            if (classPathRefsSplit.size() > i) {
-              sb.append("\n> ").append(classPathRefsSplit.get(i));
-            } else {
-              sb.append("\n> #").append(i);
+        // distinguish same artifact jars and non-same artifact jars for better logging
+        Map<CollisionAnalyzer.LibJarTuple, Collection<CollisionAnalyzer.ClassCollision>> sameArtifactJarCollisions = new HashMap<>();
+        Map<CollisionAnalyzer.LibJarTuple, Collection<CollisionAnalyzer.ClassCollision>> nonSameArtifactJarCollisions = new HashMap<>();
+
+
+        for (CollisionAnalyzer.LibJarTuple libJarTuple : result.collisionsInJarTuples.keySet()) {
+          Collection<CollisionAnalyzer.ClassCollision> element = result.collisionsInJarTuples.get(libJarTuple);
+
+          // test whether the two jars represent the same artifact
+          final boolean sameArtifact;
+          {
+            int classesInJar1 = libJarTuple.jar1.listClasses().size();
+            int classesInJar2 = libJarTuple.jar2.listClasses().size();
+            sameArtifact = (double) element.size() / classesInJar1 > 0.75
+                    && (double) element.size() / classesInJar2 > 0.75;
+          }
+
+          if (sameArtifact) {
+            sameArtifactJarCollisions.put(libJarTuple, element);
+          } else {
+            nonSameArtifactJarCollisions.put(libJarTuple, element);
+          }
+        }
+
+
+        if (sameArtifactJarCollisions.size() > 0) {
+          getLog().error("Class collisions in jars which seem to represent the same artifact of different versions:");
+          for (CollisionAnalyzer.LibJarTuple libJarTuple : sameArtifactJarCollisions.keySet()) {
+            Collection<CollisionAnalyzer.ClassCollision> element = sameArtifactJarCollisions.get(libJarTuple);
+            getLog().error("    [" + libJarTuple.jar1.jarName() + "], [" + libJarTuple.jar2.jarName() + "] " +
+                    "having " + element.size() + " class collisions");
+            // no need to list class collisions in case of same artifacts
+          }
+        }
+
+        if (nonSameArtifactJarCollisions.size() > 0) {
+          getLog().error("Class collisions in jars:");
+          for (CollisionAnalyzer.LibJarTuple libJarTuple : nonSameArtifactJarCollisions.keySet()) {
+            Collection<CollisionAnalyzer.ClassCollision> element = nonSameArtifactJarCollisions.get(libJarTuple);
+            getLog().error("    [" + libJarTuple.jar1.jarName() + "], [" + libJarTuple.jar2.jarName() + "] " +
+                    "having " + element.size() + " class collisions:");
+            // list class collisions in case of non-same artifacts
+            for (CollisionAnalyzer.ClassCollision collision : element) {
+              getLog().error("        " + collision.class1.classFile.canonicalClassName());
             }
           }
-          sb.append("\ncontain collision: ").append(pathToClassname(e.getKey()));
-          String msg = sb.toString();
+        }
+      }
 
-          getLog().info(msg);
+      if (result.collisionsOther != null && result.collisionsOther.size() > 0) {
+        hasCollisions = true;
 
+        getLog().error("Mixed class collisions:");
+        for (CollisionAnalyzer.ClassCollision collision : result.collisionsOther) {
+          getLog().error("    [" + warGwt
+                  + (collision.class1.location.type == CollisionAnalyzer.Location.Type.WEBINF_CLASSES ? "/WEB-INF/classes" : ("/WEB-INF/lib/" + collision.class1.location.libJar.jarName()))
+                  + "], [" + warServiceRest
+                  + (collision.class2.location.type == CollisionAnalyzer.Location.Type.WEBINF_CLASSES ? "/WEB-INF/classes" : ("/WEB-INF/lib/" + collision.class2.location.libJar.jarName()))
+                  + " having class collision:");
+          getLog().error("        " + collision.class1.classFile.canonicalClassName());
         }
       }
 
       if (hasCollisions) {
-        throw new MojoExecutionException("The classpaths have collisions. Fix them before merging into a single war");
+        getLog().error("Collision check ended. Class collisions found.");
+        if (isStrict()) {
+          throw new MojoFailureException("War files contain class collisions");
+        }
       } else {
-        getLog().info("The classpaths do not have collisions");
+        getLog().info("Collision check ended. No class collisions found.");
       }
-      
-    }  
-      
-    if ((!onlyClassCollision)&&(filePathRoots!=null)&&(filePathRoots.length()>0)) {
-      
-      List<String> filePathRootsSplit = Arrays.asList(filePathRoots.split("\\s*;\\s*"));
-      List<String> filePathRefsSplit = Arrays.asList(filePathRefs.split("\\s*;\\s*"));
-      
-      final Map<Path, Set<Integer>> filepaths = new HashMap<>();
-
-      if (filePathRootsSplit.size() > 1) {
-        for (int index = 0; index < filePathRootsSplit.size(); index++) {
-          String filePathRoot = filePathRootsSplit.get(index);
-
-          final Path filePathRootPath = Paths.get(filePathRoot); // maven works with paths relative to the maven project root as if they are absolute paths
-
-          if (!Files.isDirectory(filePathRootPath)) {
-            throw new MojoExecutionException("filePathRoot must be a directory: " + filePathRoot);
-          }
-
-          // files from a single filepath
-          Set<Path> filepath = walkFilePathRoot(filePathRootPath);
-
-          for (Path currfile: filepath) {
-            Set<Integer> s = filepaths.get(currfile);
-            if (s == null) {
-              s = new HashSet<>();
-              filepaths.put(currfile, s);
-            }
-            s.add(index);
-          }
-        }
-
-        // log file collisions
-        Iterator<Map.Entry<Path, Set<Integer>>> eit = filepaths.entrySet().iterator();
-        while (eit.hasNext()) {
-          Map.Entry<Path, Set<Integer>> e = eit.next();
-          if (e.getValue().size() > 1) {
-
-            StringBuilder sb = new StringBuilder();
-
-            sb.append("The filepaths");
-            for (Integer i : e.getValue()) {
-              if (filePathRefsSplit.size() > i) {
-                sb.append("\n> ").append(filePathRefsSplit.get(i));
-              } else {
-                sb.append("\n> #").append(i);
-              }
-            }
-            sb.append("\ncontain collision: ").append(e.getKey().toString());
-            String msg = sb.toString();
-
-            getLog().warn(msg);
-
-          }
-        }
-        
-      }  
     }
-    
   }
-  
+
+  protected boolean isStrict() {
+    return "true".equalsIgnoreCase(strict) || "1".equals(strict);
+  }
 }
